@@ -1,0 +1,21 @@
+{
+  "name": "peercall",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite",
+    "server": "ts-node -P tsconfig.node.json bin/server.ts",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "^18.12.5",
+    "@types/mime-types": "^2.1.4",
+    "@types/ws": "^8.5.10",
+    "mime-types": "^2.1.35",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0",
+    "ws": "^8.15.0"
+  }
+}
