@@ -1,5 +1,68 @@
+import { LitElement, html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+
 declare global {
-  var startCapture: () => void;
+  var startCall: () => void;
+  var selectVideo: () => void;
+}
+
+@customElement('media-select')
+export class UserMediaSelect extends LitElement {
+
+  @state()
+  _mediaOptions?: MediaDeviceInfo[];
+
+  constructor() {
+    super();
+
+    this.updateDevices();
+  }
+
+  render() {
+    return html`
+      <select id="select" @click="${this._handleClickSelect}" @change="${this._handleSelect}">
+        <option value="">Select input</option>
+        ${this._mediaOptions?.map(this._renderDeviceInfo)}
+      </select>
+      `;
+  }
+
+  private _renderDeviceInfo(info: MediaDeviceInfo) {
+    return html`<option value="${info.deviceId}">${info.label}</option>`;
+  }
+
+  private _handleSelect() {
+    const id = (this.renderRoot.querySelector("#select")! as HTMLSelectElement).value;
+    const selected = this._mediaOptions?.find(info => info.deviceId === id);
+
+    this.dispatchEvent(new CustomEvent('selectMedia', {
+      bubbles: true,
+      composed: true,
+      detail: { selected },
+    }));
+  }
+
+  private async _handleClickSelect() {
+    if (this._mediaOptions) {
+      return;
+    }
+
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    await this.updateDevices();
+  }
+
+  private async updateDevices() {
+    const options = (await navigator.mediaDevices.enumerateDevices()).filter(
+      info => !!info.label && info.kind === "audioinput");
+
+    if (options.length == 0) {
+      return;
+    }
+
+    this._mediaOptions = options;
+    this.requestUpdate();
+  }
 }
 
 const localVideo = document.querySelector('video#selfview')! as HTMLVideoElement;
@@ -12,6 +75,7 @@ const pc = new RTCPeerConnection({
 });
 
 interface Message {
+  connected?: boolean;
   polite?: boolean;
   description?: RTCSessionDescription;
   candidate?: RTCIceCandidate;
@@ -27,14 +91,10 @@ pc.oniceconnectionstatechange = () => {
   }
 };
 
-pc.ontrack = ({ track, streams }) => {
-  track.onunmute = () => {
-    if (remoteVideo.srcObject) {
-      return;
-    }
-
-    remoteVideo.srcObject = streams[0];
-  };
+const remoteStream = new MediaStream();
+pc.ontrack = ({ track }) => {
+  remoteVideo.srcObject = remoteStream;
+  remoteStream.addTrack(track);
 };
 
 let isPolite = false;
@@ -52,9 +112,28 @@ pc.onnegotiationneeded = async () => {
   }
 };
 
+let isConnected = false;
+ws.onopen = () => {
+  ws.send(JSON.stringify({ connected: true }));
+}
+
+ws.onclose = () => {
+  isConnected = false;
+  (document.querySelector("#startCall") as HTMLButtonElement).disabled = true;
+}
+
 let ignoreOffer = false;
 ws.onmessage = async (event) => {
-  const { description, polite, candidate } = JSON.parse(event.data) as Message;
+  const { connected, description, polite, candidate } = JSON.parse(event.data) as Message;
+
+  if (connected !== undefined) {
+    if (!isConnected) {
+      ws.send(JSON.stringify({ connected: true }));
+    }
+
+    isConnected = true;
+    (document.querySelector("#startCall") as HTMLButtonElement).disabled = false;
+  }
 
   if (polite !== undefined) {
     isPolite = !polite;
@@ -86,17 +165,47 @@ ws.onmessage = async (event) => {
   }
 }
 
-export async function startCapture() {
-  const stream = await navigator.mediaDevices.getDisplayMedia({
-    video: true,
-    audio: true,
-  });
+let videoStream: MediaStream | null = null;
+let gameAudioStream: MediaStream | null = null;
+let micAudioStream: MediaStream | null = null;
 
-  localVideo.srcObject = stream;
+export async function startCall() {
+  if (!videoStream || !gameAudioStream || !micAudioStream) {
+    return;
+  }
 
-  for (const track of stream.getTracks()) {
-    pc.addTrack(track, stream);
+  for (const track of videoStream.getTracks()) {
+    pc.addTrack(track);
+  }
+
+  for (const track of gameAudioStream.getTracks()) {
+    pc.addTrack(track);
+  }
+
+  for (const track of micAudioStream.getTracks()) {
+    pc.addTrack(track);
   }
 }
 
-globalThis.startCapture = startCapture;
+export async function selectVideo() {
+  videoStream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+  });
+
+  localVideo.srcObject = videoStream;
+}
+
+document.querySelector("#gameAudioSelect")!.addEventListener('selectMedia', async (event) => {
+  const info = ((event as CustomEvent).detail.selected as MediaDeviceInfo);
+
+  gameAudioStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: info.deviceId }});
+});
+
+document.querySelector("#micAudioSelect")!.addEventListener('selectMedia', async (event) => {
+  const info = ((event as CustomEvent).detail.selected as MediaDeviceInfo);
+
+  micAudioStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: info.deviceId }});
+});
+
+globalThis.startCall = startCall;
+globalThis.selectVideo = selectVideo;
