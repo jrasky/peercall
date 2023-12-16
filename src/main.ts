@@ -1,211 +1,117 @@
 import { LitElement, html } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, state, query } from 'lit/decorators.js';
+import { SelectMediaEvent, UserMediaSelect } from './userMediaSelect';
+import { PeerConnection } from './webrtc';
+import './userMediaSelect';
 
-declare global {
-  var startCall: () => void;
-  var selectVideo: () => void;
+enum CallState {
+    WAITING,
+    CONNECTED,
+    DISCONNECTED
 }
 
-@customElement('media-select')
-export class UserMediaSelect extends LitElement {
+@customElement('peer-call-app')
+export class PeerCallApp extends LitElement {
 
-  @state()
-  _mediaOptions?: MediaDeviceInfo[];
+    @query("#remoteview")
+    private _remoteVideo?: HTMLVideoElement;
 
-  constructor() {
-    super();
+    @query("#selfview")
+    private _localVideo?: HTMLVideoElement;
 
-    this.updateDevices();
-  }
+    @state()
+    private _callState: CallState = CallState.WAITING;
 
-  render() {
-    return html`
-      <select id="select" @click="${this._handleClickSelect}" @change="${this._handleSelect}">
-        <option value="">Select input</option>
-        ${this._mediaOptions?.map(this._renderDeviceInfo)}
-      </select>
-      `;
-  }
+    private _connection: PeerConnection;
 
-  private _renderDeviceInfo(info: MediaDeviceInfo) {
-    return html`<option value="${info.deviceId}">${info.label}</option>`;
-  }
+    private _tracks: Record<string, RTCRtpSender[]> = {};
 
-  private _handleSelect() {
-    const id = (this.renderRoot.querySelector("#select")! as HTMLSelectElement).value;
-    const selected = this._mediaOptions?.find(info => info.deviceId === id);
+    constructor() {
+        super();
 
-    this.dispatchEvent(new CustomEvent('selectMedia', {
-      bubbles: true,
-      composed: true,
-      detail: { selected },
-    }));
-  }
-
-  private async _handleClickSelect() {
-    if (this._mediaOptions) {
-      return;
+        this._connection = new PeerConnection();
+        this._connection.addEventListener('connect', this._onConnect);
+        this._connection.addEventListener('disconnect', this._onDisconnect);
     }
 
-    await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    await this.updateDevices();
-  }
-
-  private async updateDevices() {
-    const options = (await navigator.mediaDevices.enumerateDevices()).filter(
-      info => !!info.label && info.kind === "audioinput");
-
-    if (options.length == 0) {
-      return;
+    render() {
+        return html`
+        <div>
+            <video id="remoteview" autoplay playsinline controls></video>
+        </div>
+        <div>
+            <p>Self-view</p>
+            <video id="selfview" autoplay playsinline muted></video>
+            <br>
+            <button @click="${this._clickSelectVideo}">Select video</button>
+        </div>
+        <div>
+            <p>Game audio: <media-select @selectmedia="${this._onSelectMedia}" ?disabled="${this._callState !== CallState.CONNECTED}" id="gameAudio" /></p>
+        </div>
+        <div>
+            <p>Mic audio: <media-select @selectmedia="${this._onSelectMedia}" ?disabled="${this._callState !== CallState.CONNECTED}" id="micAudio" /></p>
+        </div>
+        <div>
+            <p>${this._callStateText()}</p>
+            <button @click="${this._clickStartCall}" ?disabled=${this._callState !== CallState.CONNECTED}>Start call</button>
+        </div>
+    `;
     }
 
-    this._mediaOptions = options;
-    this.requestUpdate();
-  }
-}
-
-const localVideo = document.querySelector('video#selfview')! as HTMLVideoElement;
-const remoteVideo = document.querySelector('video#remoteview')! as HTMLVideoElement;
-const ws = new WebSocket(`ws://${document.location.host}${document.location.pathname}`);
-const pc = new RTCPeerConnection({
-  iceServers: [{
-    urls: 'stun:stun.l.google.com:19302',
-  }]
-});
-
-interface Message {
-  connected?: boolean;
-  polite?: boolean;
-  description?: RTCSessionDescription;
-  candidate?: RTCIceCandidate;
-}
-
-pc.onicecandidate = ({ candidate }) => {
-  ws.send(JSON.stringify({ candidate }));
-};
-
-pc.oniceconnectionstatechange = () => {
-  if (pc.iceConnectionState === "failed") {
-    pc.restartIce();
-  }
-};
-
-const remoteStream = new MediaStream();
-pc.ontrack = ({ track }) => {
-  remoteVideo.srcObject = remoteStream;
-  remoteStream.addTrack(track);
-};
-
-let isPolite = false;
-let makingOffer = false;
-pc.onnegotiationneeded = async () => {
-  try {
-    makingOffer = true;
-    ws.send(JSON.stringify({ polite: isPolite }));
-    await pc.setLocalDescription();
-    ws.send(JSON.stringify({ description: pc.localDescription }));
-  } catch (err) {
-    console.error(err);
-  } finally {
-    makingOffer = false;
-  }
-};
-
-let isConnected = false;
-ws.onopen = () => {
-  ws.send(JSON.stringify({ connected: true }));
-}
-
-ws.onclose = () => {
-  isConnected = false;
-  (document.querySelector("#startCall") as HTMLButtonElement).disabled = true;
-}
-
-let ignoreOffer = false;
-ws.onmessage = async (event) => {
-  const { connected, description, polite, candidate } = JSON.parse(event.data) as Message;
-
-  if (connected !== undefined) {
-    if (!isConnected) {
-      ws.send(JSON.stringify({ connected: true }));
+    private _callStateText() {
+        switch (this._callState) {
+            case CallState.WAITING:
+                return 'Waiting for connection';
+            case CallState.CONNECTED:
+                return 'Connected';
+            case CallState.DISCONNECTED:
+                return 'Disconnected';
+        }
     }
 
-    isConnected = true;
-    (document.querySelector("#startCall") as HTMLButtonElement).disabled = false;
-  }
-
-  if (polite !== undefined) {
-    isPolite = !polite;
-  }
-  
-  if (description !== undefined) {
-    const offerCollision = description.type === "offer" && (makingOffer || pc.signalingState !== "stable");
-    ignoreOffer = !isPolite && offerCollision;
-
-    if (ignoreOffer) {
-      return;
+    private _clickStartCall() {
+        this._remoteVideo!.srcObject = this._connection.remoteStream;
     }
 
-    await pc.setRemoteDescription(description);
-    if (description.type === "offer") {
-      await pc.setLocalDescription();
-      ws.send(JSON.stringify({ description: pc.localDescription }));
+    private async _clickSelectVideo() {
+        const videoStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+        });
+
+        this._localVideo!.srcObject = videoStream;
+        this._sendStream('video', videoStream);
     }
-  }
 
-  if (candidate !== undefined) {
-    try {
-      await pc.addIceCandidate(candidate);
-    } catch (err) {
-      if (!ignoreOffer) {
-        throw err;
-      }
+    private async _onSelectMedia(event: CustomEvent<SelectMediaEvent>) {
+        const id = (event.target as UserMediaSelect).id;
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                deviceId: event.detail.selected.deviceId,
+            }
+        });
+
+        this._sendStream(id, stream);
     }
-  }
+
+    private _sendStream(id: string, stream: MediaStream) {
+        if (this._tracks[id]) {
+            for (const sender of this._tracks[id]) {
+                this._connection.removeTrack(sender);
+            }
+        }
+
+        this._tracks[id] = [];
+        for (const track of stream.getTracks()) {
+            this._tracks[id].push(this._connection.addTrack(track));
+        }
+    }
+
+    private _onConnect = () => {
+        this._callState = CallState.CONNECTED;
+    }
+
+    private _onDisconnect = () => {
+        this._callState = CallState.DISCONNECTED;
+    }
 }
-
-let videoStream: MediaStream | null = null;
-let gameAudioStream: MediaStream | null = null;
-let micAudioStream: MediaStream | null = null;
-
-export async function startCall() {
-  if (!videoStream || !gameAudioStream || !micAudioStream) {
-    return;
-  }
-
-  for (const track of videoStream.getTracks()) {
-    pc.addTrack(track);
-  }
-
-  for (const track of gameAudioStream.getTracks()) {
-    pc.addTrack(track);
-  }
-
-  for (const track of micAudioStream.getTracks()) {
-    pc.addTrack(track);
-  }
-}
-
-export async function selectVideo() {
-  videoStream = await navigator.mediaDevices.getDisplayMedia({
-    video: true,
-  });
-
-  localVideo.srcObject = videoStream;
-}
-
-document.querySelector("#gameAudioSelect")!.addEventListener('selectMedia', async (event) => {
-  const info = ((event as CustomEvent).detail.selected as MediaDeviceInfo);
-
-  gameAudioStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: info.deviceId }});
-});
-
-document.querySelector("#micAudioSelect")!.addEventListener('selectMedia', async (event) => {
-  const info = ((event as CustomEvent).detail.selected as MediaDeviceInfo);
-
-  micAudioStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: info.deviceId }});
-});
-
-globalThis.startCall = startCall;
-globalThis.selectVideo = selectVideo;

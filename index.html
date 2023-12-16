@@ -6,22 +6,7 @@
     <title>PeerCall</title>
   </head>
   <body>
-    <div>
-      <video id="remoteview" autoplay playsinline></video>
-    </div>
-    <div>
-      <p>Self-view</p>
-      <video id="selfview" autoplay playsinline muted></video>
-      <br>
-      <button onclick="selectVideo()">Select video</button>
-    </div>
-    <div>
-      <p>Game audio: <media-select id="gameAudioSelect" /></p>
-    </div>
-    <div>
-      <p>Mic audio: <media-select id="micAudioSelect" /></p>
-    </div>
-    <button id="startCall" onclick="startCall()" disabled>Start Call</button>
+    <peer-call-app />
 
     <script type="module" src="/src/main.ts"></script>
   </body>
