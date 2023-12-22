@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state, query, property } from 'lit/decorators.js';
 
 export interface SelectMediaEvent {
-    selected: MediaDeviceInfo;
+    selected: Map<string, MediaStream>;
 }
 
 @customElement('media-select')
@@ -11,39 +11,76 @@ export class UserMediaSelect extends LitElement {
     @property({ type: Boolean })
     disabled?: boolean;
 
-    @query("#select")
-    private _select?: HTMLSelectElement;
+    @query("#form")
+    private _form?: HTMLFieldSetElement;
 
     @state()
     private _mediaOptions?: MediaDeviceInfo[];
 
+    private _selected: Map<string, MediaStream> = new Map();
+
     constructor() {
         super();
+    }
 
+    connectedCallback(): void {
+        super.connectedCallback();
         this.updateDevices();
     }
 
     render() {
         return html`
-      <select id="select" ?disabled="${this.disabled}" @click="${this._handleClickSelect}" @change="${this._handleSelect}">
-        <option value="">Select input</option>
-        ${this._mediaOptions?.map(this._renderDeviceInfo)}
-      </select>
+        <fieldset id="form" @input="${this._handleInput}">
+            <legend>Select input devices</legend>
+            ${this._mediaOptions?.map(this._renderDeviceInfo)}
+            ${this._mediaOptions ? null : this._renderSelectButton()}
+        </fieldset>
       `;
     }
 
-    private _renderDeviceInfo(info: MediaDeviceInfo) {
-        return html`<option value="${info.deviceId}">${info.label}</option>`;
+    get selected() {
+        return this._selected;
     }
 
-    private _handleSelect() {
-        const id = this._select!.value;
-        const selected = this._mediaOptions?.find(info => info.deviceId === id)!;
+    private _renderDeviceInfo = (info: MediaDeviceInfo) => {
+        return html`
+        <div>
+            <label><input type="checkbox" name="${info.deviceId}" ?disabled="${this.disabled}" />${info.label}</label>
+        </div>`;
+    }
+
+    private _renderSelectButton = () => {
+        return html`
+        <div>
+            <button @click="${this._handleClickSelect}" ?disabled="${this.disabled}">Select audio</button>
+        </div>
+        `;
+    }
+
+    private async _handleInput() {
+        for (const element of this._form!.elements) {
+            if (element instanceof HTMLInputElement) {
+                if (element.checked) {
+                    if (this._selected.has(element.name)) {
+                        // Already selected stream
+                        continue;
+                    }
+
+                    this._selected.set(element.name, await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            deviceId: element.name,
+                        }
+                    }));
+                } else {
+                    this._selected.delete(element.name);
+                }
+            }
+        }
 
         this.dispatchEvent(new CustomEvent<SelectMediaEvent>('selectmedia', {
             bubbles: true,
             composed: true,
-            detail: { selected },
+            detail: { selected: this._selected },
         }));
     }
 
