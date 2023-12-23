@@ -1,4 +1,4 @@
-import { LitElement, html } from 'lit';
+import { LitElement, html, css } from 'lit';
 import { customElement, state, query } from 'lit/decorators.js';
 import { UserMediaSelect } from './userMediaSelect';
 import { PeerConnection } from './webrtc';
@@ -40,6 +40,18 @@ export class PeerCallApp extends LitElement {
         this._connection.addEventListener('disconnect', this._onDisconnect);
     }
 
+    static styles = css`
+    video#remoteview {
+        width: 1280px;
+        height: 720px;
+    }
+
+    video#selfview {
+        width: 320px;
+        height: 180px;
+    }
+    `;
+
     render() {
         return html`
         <div>
@@ -76,8 +88,10 @@ export class PeerCallApp extends LitElement {
         this._callState = CallState.CONNECTED;
         this._remoteVideo!.srcObject = this._connection.remoteStream;
 
-        for (const track of this._videoStream!.getTracks()) {
-            this._videoSenders.push(this._connection.addTrack(track));
+        if (this._videoStream) {
+            for (const track of this._videoStream.getTracks()) {
+                this._videoSenders.push(this._connection.addTrack(track));
+            }
         }
 
         this._onSelectAudio();

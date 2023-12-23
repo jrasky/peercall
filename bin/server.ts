@@ -1,4 +1,5 @@
 import http from 'http';
+import https from 'https';
 import fs from 'fs';
 import mime from 'mime-types';
 import WebSocket, { WebSocketServer } from 'ws';
@@ -65,12 +66,16 @@ wss.on('connection', (ws: WebSocket, session: Session, clientId: string) => {
     });
 });
 
-const server = http.createServer((req, res) => {
+const options = {
+    key: fs.readFileSync('/etc/letsencrypt/live/streaming.kobold.house/privkey.pem'),
+    cert: fs.readFileSync('/etc/letsencrypt/live/streaming.kobold.house/cert.pem'),
+    ca: fs.readFileSync('/etc/letsencrypt/live/streaming.kobold.house/fullchain.pem'),
+};
+
+const server = https.createServer(options, (req, res) => {
     console.log(`${req.socket.remoteAddress} ${req.method} ${req.url}`);
 
-    const url = new URL(req.url!, 'http://localhost:8080/');
-
-    if (req.method === 'GET' && url.pathname === '/') {
+    if (req.method === 'GET' && req.url! === '/') {
         const sessionId = randomId(10);
 
         SESSIONS.set(sessionId, {
@@ -80,15 +85,15 @@ const server = http.createServer((req, res) => {
 
         res.writeHead(303, { 'Location': `/session/${sessionId}` });
         res.end();
-    } else if (req.method === 'GET' && url.pathname.startsWith('/assets/')) {
-        const path = url.pathname.substring('/assets/'.length);
+    } else if (req.method === 'GET' && req.url!.startsWith('/assets/')) {
+        const path = req.url!.substring('/assets/'.length);
         if (path.indexOf('..') > -1) {
             res.writeHead(404);
             res.end();
             return;
         }
 
-        fs.readFile(`dist/assets/${path}`, (err, data) => {
+        fs.readFile(`assets/${path}`, (err, data) => {
             if (err) {
                 res.writeHead(404);
                 res.end();
@@ -101,8 +106,8 @@ const server = http.createServer((req, res) => {
 
             res.end(data);
         });
-    } else if (req.method === 'GET' && url.pathname.startsWith('/session/')) {
-        const sessionId = url.pathname.substring('/session/'.length);
+    } else if (req.method === 'GET' && req.url!.startsWith('/session/')) {
+        const sessionId = req.url!.substring('/session/'.length);
         const session = SESSIONS.get(sessionId);
         if (!session) {
             res.writeHead(404);
@@ -111,7 +116,7 @@ const server = http.createServer((req, res) => {
         }
 
         res.writeHead(200, { 'Content-Type': 'text/html' });
-        fs.readFile('dist/index.html', (_, data) => res.end(data));
+        fs.readFile('index.html', (_, data) => res.end(data));
     } else {
         res.writeHead(404);
         res.end();
@@ -127,10 +132,8 @@ server.on('upgrade', (req, socket, head) => {
         return;
     }
 
-    const url = new URL(req.url!, 'http://localhost:8080/');
-
-    if (url.pathname.startsWith('/session/')) {
-        const sessionId = url.pathname.substring('/session/'.length);
+    if (req.url!.startsWith('/session/')) {
+        const sessionId = req.url!.substring('/session/'.length);
 
         const session = SESSIONS.get(sessionId);
         if (!session) {
@@ -153,5 +156,5 @@ server.on('upgrade', (req, socket, head) => {
     }
 });
 
-server.listen(8080, "0.0.0.0");
-console.log("Listening on 8080");
+server.listen(443, "0.0.0.0");
+console.log("Listening on 443");

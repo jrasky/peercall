@@ -5,16 +5,21 @@
   "scripts": {
     "dev": "vite",
     "server": "ts-node -P tsconfig.node.json bin/server.ts",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && rollup --config rollup.config.js",
     "preview": "vite preview"
   },
   "devDependencies": {
     "@material/web": "^1.0.1",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-typescript": "^11.1.5",
     "@tsconfig/node-lts": "^18.12.5",
     "@types/mime-types": "^2.1.4",
     "@types/ws": "^8.5.10",
     "lit": "^3.1.0",
     "mime-types": "^2.1.35",
+    "rollup": "^4.9.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.2.2",
     "vite": "^5.0.0",

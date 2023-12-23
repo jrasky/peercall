@@ -31,7 +31,7 @@ export class PeerConnection extends EventTarget {
     constructor() {
         super();
 
-        this._ws = new WebSocket(`ws://${document.location.host}${document.location.pathname}`);
+        this._ws = new WebSocket(`wss://${document.location.host}${document.location.pathname}`);
         this._ws.addEventListener('open', this._onOpen);
         this._ws.addEventListener('close', this._onClose);
         this._ws.addEventListener('message', this._onMessage);
@@ -79,7 +79,13 @@ export class PeerConnection extends EventTarget {
     }
 
     private _onTrack = (event: RTCTrackEvent) => {
-        this._remoteStream.addTrack(event.track);
+        event.track.addEventListener('unmute', () => {
+            this._remoteStream.addTrack(event.track);
+        });
+
+        event.track.addEventListener('mute', () => {
+            this._remoteStream.removeTrack(event.track);
+        });
     }
 
     private _onNegotiationNeeded = async () => {
