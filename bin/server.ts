@@ -1,3 +1,4 @@
+import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import mime from 'mime-types';
@@ -79,13 +80,15 @@ wss.on('connection', (ws: WebSocket, session: Session, clientId: string) => {
     });
 });
 
-const options = {
+const server = process.env.NODE_ENV === "production" ? https.createServer({
     key: fs.readFileSync('/etc/letsencrypt/live/streaming.kobold.house/privkey.pem'),
     cert: fs.readFileSync('/etc/letsencrypt/live/streaming.kobold.house/cert.pem'),
     ca: fs.readFileSync('/etc/letsencrypt/live/streaming.kobold.house/fullchain.pem'),
-};
+}) : http.createServer();
 
-const server = https.createServer(options, (req, res) => {
+const basePath = process.env.NODE_ENV === "production" ? '.' : 'dist';
+
+server.on('request', (req, res) => {
     console.log(`${req.socket.remoteAddress} ${req.method} ${req.url}`);
 
     if (req.method === 'GET' && req.url! === '/') {
@@ -107,7 +110,7 @@ const server = https.createServer(options, (req, res) => {
             return;
         }
 
-        fs.readFile(`assets/${path}`, (err, data) => {
+        fs.readFile(`${basePath}/assets/${path}`, (err, data) => {
             if (err) {
                 res.writeHead(404);
                 res.end();
@@ -130,7 +133,7 @@ const server = https.createServer(options, (req, res) => {
         }
 
         res.writeHead(200, { 'Content-Type': 'text/html' });
-        fs.readFile('index.html', (_, data) => res.end(data));
+        fs.readFile(`${basePath}/index.html`, (_, data) => res.end(data));
     } else {
         res.writeHead(404);
         res.end();
@@ -170,5 +173,14 @@ server.on('upgrade', (req, socket, head) => {
     }
 });
 
-server.listen(443, "::");
-console.log("Listening on [::]:443");
+async function main() {
+    if (process.env.NODE_ENV === "production") {
+        server.listen(443, "::");
+        console.log("Listening on [::]:443");
+    } else {
+        server.listen(8080, "::");
+        console.log("Listening on [::]:8080");
+    }
+}
+
+main();

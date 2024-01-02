@@ -3,6 +3,7 @@ Description=PeerCall
 After=network.target
 
 [Service]
+Environment=NODE_ENV=production
 ExecStart=/snap/bin/node /opt/peercall/server.js
 WorkingDirectory=/opt/peercall
 Restart=always

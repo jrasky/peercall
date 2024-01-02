@@ -3,10 +3,8 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "vite",
-    "server": "ts-node -P tsconfig.node.json bin/server.ts",
-    "build": "tsc && vite build && rollup --config rollup.config.js",
-    "preview": "vite preview"
+    "dev": "vite build --sourcemap true && ts-node -P tsconfig.node.json bin/server.ts",
+    "build": "tsc && vite build && rollup --config rollup.config.js"
   },
   "devDependencies": {
     "@material/web": "^1.0.1",

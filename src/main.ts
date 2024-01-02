@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state, query } from 'lit/decorators.js';
-import { UserMediaSelect } from './userMediaSelect';
 import { PeerConnection } from './webrtc';
+import { SelectMediaEvent } from './userMediaSelect';
 import './userMediaSelect';
 
 enum CallState {
@@ -20,17 +20,15 @@ export class PeerCallApp extends LitElement {
     @query("#selfview")
     private _localVideo?: HTMLVideoElement;
 
-    @query("#audioselect")
-    private _audioSelect?: UserMediaSelect;
-
     @state()
     private _callState: CallState = CallState.WAITING;
 
     private _connection: PeerConnection;
 
-    private _videoStream?: MediaStream;
+    private _videoStream: MediaStream | null = null;
+    private _audioStream: MediaStream | null = null;
     private _videoSenders: RTCRtpSender[] = [];
-    private _audioSenders: Map<string, RTCRtpSender[]> = new Map();
+    private _audioSenders: RTCRtpSender[] = [];
 
     constructor() {
         super();
@@ -61,9 +59,14 @@ export class PeerCallApp extends LitElement {
             <p>Self-view</p>
             <video id="selfview" autoplay playsinline muted></video>
             <br>
-            <button @click="${this._clickSelectVideo}" ?disabled="${this._callState === CallState.DISCONNECTED}">Select video</button>
+            <media-select kind="video" @selectmedia="${this._onSelectVideo}" ?disabled="${this._callState === CallState.DISCONNECTED}"></media-select>
         </div>
-        <media-select id="audioselect" @selectmedia="${this._onSelectAudio}" ?disabled="${this._callState === CallState.DISCONNECTED}"></media-select>
+        <div>
+            <label>
+                Audio input:
+                <media-select kind="audio" @selectmedia="${this._onSelectAudio}" ?disabled="${this._callState === CallState.DISCONNECTED}"></media-select>
+            </label>
+        </div>
         <div>
             <p>${this._callStateText()}</p>
             <button @click="${this._clickStartCall}" ?disabled=${this._callState !== CallState.READY}>Start call</button>
@@ -94,16 +97,16 @@ export class PeerCallApp extends LitElement {
             }
         }
 
-        this._onSelectAudio();
+        if (this._audioStream) {
+            for (const track of this._audioStream.getTracks()) {
+                this._audioSenders.push(this._connection.addTrack(track));
+            }
+        }
     }
 
-    private async _clickSelectVideo() {
-        const videoStream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-        });
-
-        this._localVideo!.srcObject = videoStream;
-        this._videoStream = videoStream;
+    private async _onSelectVideo(event: CustomEvent<SelectMediaEvent>) {
+        this._localVideo!.srcObject = event.detail.selected;
+        this._videoStream = event.detail.selected;
 
         if (this._callState === CallState.CONNECTED) {
             for (const sender of this._videoSenders) {
@@ -112,34 +115,29 @@ export class PeerCallApp extends LitElement {
 
             this._videoSenders = [];
 
-            for (const track of videoStream.getTracks()) {
-                this._videoSenders.push(this._connection.addTrack(track));
+            if (this._videoStream) {
+                for (const track of this._videoStream.getTracks()) {
+                    this._videoSenders.push(this._connection.addTrack(track));
+                }
             }
         }
     }
 
-    private _onSelectAudio() {
-        for (const [id, senders] of this._audioSenders.entries()) {
-            if (!this._audioSelect!.selected.has(id)) {
-                for (const sender of senders) {
-                    this._connection.removeTrack(sender);
+    private async _onSelectAudio(event: CustomEvent<SelectMediaEvent>) {
+        this._audioStream = event.detail.selected;
+
+        if (this._callState === CallState.CONNECTED) {
+            for (const sender of this._audioSenders) {
+                this._connection.removeTrack(sender);
+
+                this._audioSenders = [];
+
+                if (this._audioStream) {
+                    for (const track of this._audioStream.getTracks()) {
+                        this._audioSenders.push(this._connection.addTrack(track));
+                    }
                 }
-
-                this._audioSenders.delete(id);
             }
-        }
-
-        for (const [id, stream] of this._audioSelect!.selected.entries()) {
-            if (this._audioSenders.has(id)) {
-                // Assume we don't need to update anything for the same device
-                continue;
-            }
-
-            const senders = []
-            for (const track of stream.getTracks()) {
-                senders.push(this._connection.addTrack(track));
-            }
-            this._audioSenders.set(id, senders);
         }
     }
 

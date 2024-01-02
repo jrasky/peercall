@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state, query, property } from 'lit/decorators.js';
 
 export interface SelectMediaEvent {
-    selected: Map<string, MediaStream>;
+    selected: MediaStream | null;
 }
 
 @customElement('media-select')
@@ -11,13 +11,16 @@ export class UserMediaSelect extends LitElement {
     @property({ type: Boolean })
     disabled?: boolean;
 
-    @query("#form")
-    private _form?: HTMLFieldSetElement;
+    @property({ type: String })
+    kind?: string;
+
+    @query("#select")
+    private _input?: HTMLSelectElement;
 
     @state()
     private _mediaOptions?: MediaDeviceInfo[];
 
-    private _selected: Map<string, MediaStream> = new Map();
+    private _selected: MediaStream | null = null;
 
     constructor() {
         super();
@@ -25,16 +28,15 @@ export class UserMediaSelect extends LitElement {
 
     connectedCallback(): void {
         super.connectedCallback();
-        this.updateDevices();
+        this._updateDevices();
     }
 
     render() {
         return html`
-        <fieldset id="form" @input="${this._handleInput}">
-            <legend>Select input devices</legend>
-            ${this._mediaOptions?.map(this._renderDeviceInfo)}
-            ${this._mediaOptions ? null : this._renderSelectButton()}
-        </fieldset>
+        <select id="select" ?disabled=${this.disabled} @click=${this._handleClickSelect} @input=${this._handleInput}>
+            <option value="">Select an input</option>
+            ${this._mediaOptions?.map(this._renderDeviceInfo) || null}
+        </select>
       `;
     }
 
@@ -43,44 +45,29 @@ export class UserMediaSelect extends LitElement {
     }
 
     private _renderDeviceInfo = (info: MediaDeviceInfo) => {
-        return html`
-        <div>
-            <label><input type="checkbox" name="${info.deviceId}" ?disabled="${this.disabled}" />${info.label}</label>
-        </div>`;
-    }
-
-    private _renderSelectButton = () => {
-        return html`
-        <div>
-            <button @click="${this._handleClickSelect}" ?disabled="${this.disabled}">Select audio</button>
-        </div>
-        `;
+        return html`<option value="${info.deviceId}">${info.label}</option>`;
     }
 
     private async _handleInput() {
-        for (const element of this._form!.elements) {
-            if (element instanceof HTMLInputElement) {
-                if (element.checked) {
-                    if (this._selected.has(element.name)) {
-                        // Already selected stream
-                        continue;
-                    }
+        if (!this._input!.value) {
+            this._selected = null;
+            this.dispatchEvent(new CustomEvent<SelectMediaEvent>('selectmedia', {
+                bubbles: true,
+                composed: true,
+                detail: { selected: null },
+            }));
 
-                    this._selected.set(element.name, await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            deviceId: element.name,
-                        }
-                    }));
-                } else {
-                    this._selected.delete(element.name);
-                }
-            }
+            return;
         }
+
+        const stream = await this._getUserMedia(this._input!.value);
+
+        this._selected = stream;
 
         this.dispatchEvent(new CustomEvent<SelectMediaEvent>('selectmedia', {
             bubbles: true,
             composed: true,
-            detail: { selected: this._selected },
+            detail: { selected: stream },
         }));
     }
 
@@ -89,19 +76,40 @@ export class UserMediaSelect extends LitElement {
             return;
         }
 
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        await this._getUserMedia();
 
-        await this.updateDevices();
+        await this._updateDevices();
     }
 
-    private async updateDevices() {
+    private async _updateDevices() {
+        const inputKind = this.kind === "audio" ? "audioinput" : "videoinput";
+
         const options = (await navigator.mediaDevices.enumerateDevices()).filter(
-            info => !!info.label && info.kind === "audioinput");
+            info => !!info.label && info.kind === inputKind);
 
         if (options.length == 0) {
             return;
         }
 
         this._mediaOptions = options;
+    }
+
+    private async _getUserMedia(deviceId?: string) {
+        if (this.kind === "audio") {
+            return await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    deviceId,
+                    echoCancellation: false,
+                    autoGainControl: false,
+                    noiseSuppression: false,
+                },
+            });
+        } else {
+            return await navigator.mediaDevices.getUserMedia({
+                video: {
+                    deviceId,
+                },
+            });
+        }
     }
 }

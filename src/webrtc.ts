@@ -31,7 +31,9 @@ export class PeerConnection extends EventTarget {
     constructor() {
         super();
 
-        this._ws = new WebSocket(`wss://${document.location.host}${document.location.pathname}`);
+        const protocol = document.location.protocol === 'http:' ? 'ws:' : 'wss:';
+
+        this._ws = new WebSocket(`${protocol}//${document.location.host}${document.location.pathname}`);
         this._ws.addEventListener('open', this._onOpen);
         this._ws.addEventListener('close', this._onClose);
         this._ws.addEventListener('message', this._onMessage);
@@ -92,7 +94,10 @@ export class PeerConnection extends EventTarget {
         try {
             this._makingOffer = true;
             this._sendMessage({ type: 'polite', polite: this._polite });
-            await this._pc.setLocalDescription();
+            let offer = await this._pc.createOffer();
+            // Hack: enable stereo audio in opus streams.
+            offer.sdp = offer.sdp?.replaceAll('useinbandfec=1', 'useinbandfec=1; stereo=1');
+            await this._pc.setLocalDescription(offer);
             this._sendMessage({ type: 'description', description: this._pc.localDescription! });
         } catch (err) {
             console.log(err);
@@ -142,7 +147,10 @@ export class PeerConnection extends EventTarget {
         
                 await this._pc.setRemoteDescription(message.description);
                 if (message.description.type === "offer") {
-                    await this._pc.setLocalDescription();
+                    let answer = await this._pc.createAnswer();
+                    // Hack: enable stereo audio in opus streams.
+                    answer.sdp = answer.sdp?.replaceAll('useinbandfec=1', 'useinbandfec=1; stereo=1');
+                    await this._pc.setLocalDescription(answer);
                     this._sendMessage({ type: 'description', description: this._pc.localDescription! });
                 }
 
