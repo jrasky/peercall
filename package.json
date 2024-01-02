@@ -1,6 +1,7 @@
 {
   "name": "peercall",
   "private": true,
+  "license": "MIT",
   "version": "0.0.0",
   "scripts": {
     "dev": "vite build --sourcemap true && ts-node -P tsconfig.node.json bin/server.ts",
