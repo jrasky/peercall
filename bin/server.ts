@@ -1,15 +1,28 @@
-import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import mime from 'mime-types';
 import WebSocket, { WebSocketServer } from 'ws';
 
 interface Session {
+    startedAt: number;
     sessionId: string;
     clients: WebSocket[];
 }
 
 const SESSIONS: Map<string, Session> = new Map();
+
+function sessionCleanup() {
+    // Clean sessions older than five minutes with no connections
+    for (const [id, session] of SESSIONS) {
+        if (Date.now() - session.startedAt > 5 * 60 * 1000 && session.clients.length === 0) {
+            console.log(`Removing dead session ${id}`);
+            SESSIONS.delete(id);
+        }
+    }
+}
+
+// Clean up dead sessions every five minutes
+setInterval(sessionCleanup, 5 * 60 * 1000);
 
 function randomId(length: number): string {
     let id = '';
@@ -79,6 +92,7 @@ const server = https.createServer(options, (req, res) => {
         const sessionId = randomId(10);
 
         SESSIONS.set(sessionId, {
+            startedAt: Date.now(),
             sessionId,
             clients: [],
         });
@@ -156,5 +170,5 @@ server.on('upgrade', (req, socket, head) => {
     }
 });
 
-server.listen(443, "0.0.0.0");
-console.log("Listening on 443");
+server.listen(443, "::");
+console.log("Listening on [::]:443");

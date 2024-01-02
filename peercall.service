@@ -1,9 +1,11 @@
 [Unit]
 Description=PeerCall
+After=network.target
 
 [Service]
 ExecStart=/snap/bin/node /opt/peercall/server.js
 WorkingDirectory=/opt/peercall
+Restart=always
 
 [Install]
 WantedBy=multi-user.target
